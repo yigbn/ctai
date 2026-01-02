@@ -35,22 +35,7 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
   const [status, setStatus] = useState<string | null>(null);
   const [lastEngineMove, setLastEngineMove] = useState<string | null>(null);
   const [explanation, setExplanation] = useState<string | null>(null);
-
-  const displayFen = useMemo(() => {
-    if (!session) return initialFen === 'startpos' ? undefined : initialFen;
-    return session.currentFen;
-  }, [session, initialFen]);
-
-  const chess = useMemo(() => {
-    if (displayFen && displayFen !== 'startpos') {
-      try {
-        return new Chess(displayFen);
-      } catch {
-        return new Chess();
-      }
-    }
-    return new Chess();
-  }, [displayFen]);
+  const [boardFen, setBoardFen] = useState<string | null>(null);
 
   const authHeaders = useMemo(
     () => ({
@@ -84,6 +69,7 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
       }
       const json = (await res.json()) as Session;
       setSession(json);
+      setBoardFen(json.currentFen);
       setStatus('Session started');
     } catch (err: any) {
       setStatus(err.message ?? 'Error creating session');
@@ -97,6 +83,23 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
       setStatus('Create a session first.');
       return;
     }
+    const from = moveUci.slice(0, 2);
+    const to = moveUci.slice(2, 4);
+
+    // Optimistically apply the move on the client so it shows immediately.
+    try {
+      const baseFen = boardFen ?? session.currentFen;
+      const chess = new Chess(baseFen);
+      const move = chess.move({ from, to, promotion: 'q' });
+      if (!move) {
+        setStatus('Illegal move');
+        return;
+      }
+      setBoardFen(chess.fen());
+    } catch {
+      // If anything goes wrong, just rely on server state.
+    }
+
     setLoading(true);
     setStatus(null);
     try {
@@ -111,11 +114,16 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
       }
       const json = (await res.json()) as MoveResponse;
       setSession(json.session);
+      setBoardFen(json.session.currentFen);
       setLastEngineMove(json.engineMove ?? null);
       setExplanation(json.explanation ?? null);
       setStatus('Move played');
     } catch (err: any) {
       setStatus(err.message ?? 'Error sending move');
+      // Revert board to the last known server position.
+      if (session) {
+        setBoardFen(session.currentFen);
+      }
     } finally {
       setLoading(false);
     }
@@ -136,6 +144,7 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
       }
       const json = (await res.json()) as Session;
       setSession(json);
+      setBoardFen(json.currentFen);
       setExplanation(null);
       setLastEngineMove(null);
       setStatus('Position reset to original');
@@ -161,6 +170,7 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
       }
       const json = (await res.json()) as Session;
       setSession(json);
+      setBoardFen(json.currentFen);
       setExplanation(null);
       setLastEngineMove(null);
       setStatus('Side switched and position reset');
@@ -215,9 +225,17 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
           </div>
 
           <Chessboard
-            chess={chess}
+            fen={
+              boardFen ??
+              (session
+                ? session.currentFen
+                : initialFen === 'startpos'
+                  ? new Chess().fen()
+                  : initialFen)
+            }
             userColor={session?.userColor ?? userColor}
             onUserMove={handleUserMove}
+            disabled={loading || !session}
           />
         </div>
       </section>

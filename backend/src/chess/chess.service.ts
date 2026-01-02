@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Chess } from 'chess.js';
 import { EngineService, EngineAnalysis } from './engine.service';
 import { AiExplanationService } from './ai-explanation.service';
@@ -77,9 +77,15 @@ export class ChessService {
     const to = moveUci.slice(2, 4);
     const promotion = moveUci.length === 5 ? moveUci[4] : undefined;
 
-    const result = chess.move({ from, to, promotion });
+    let result;
+    try {
+      result = chess.move({ from, to, promotion });
+    } catch (e: any) {
+      // chess.js can throw "Invalid move" errors – convert to a clean 400.
+      throw new BadRequestException(e?.message ?? `Illegal move: ${moveUci}`);
+    }
     if (!result) {
-      throw new Error('Illegal move');
+      throw new BadRequestException(`Illegal move: ${moveUci}`);
     }
     session.moveHistory.push(moveUci);
     session.currentFen = chess.fen();

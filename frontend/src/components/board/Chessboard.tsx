@@ -1,115 +1,39 @@
-import React, { useMemo, useState } from 'react';
-import { Chess } from 'chess.js';
+import React from 'react';
+import { Chessboard as RcChessboard } from 'react-chessboard';
 
 interface Props {
-  chess: Chess;
+  fen: string;
   userColor: 'white' | 'black';
   onUserMove: (moveUci: string) => void;
+  disabled?: boolean;
 }
 
-interface SquareCoords {
-  file: number;
-  rank: number;
-}
+export const Chessboard: React.FC<Props> = ({ fen, userColor, onUserMove, disabled }) => {
+  const position = fen;
 
-const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const;
-
-export const Chessboard: React.FC<Props> = ({ chess, userColor, onUserMove }) => {
-  const [selected, setSelected] = useState<SquareCoords | null>(null);
-
-  const boardSquares = useMemo(() => {
-    const result: { square: string; piece: string | null; color: 'light' | 'dark' }[] = [];
-
-    const ranks = [...Array(8).keys()].map((i) => i + 1);
-    const orientedRanks = userColor === 'white' ? ranks.slice().reverse() : ranks;
-    const orientedFiles = userColor === 'white' ? files : [...files].reverse();
-
-    for (const rank of orientedRanks) {
-      for (const fileIdx in orientedFiles) {
-        const file = orientedFiles[fileIdx as any];
-        const square = `${file}${rank}`;
-        const piece = chess.get(square as any);
-        const pieceChar = piece ? (piece.color === 'w' ? piece.type.toUpperCase() : piece.type) : null;
-        const isDark = (rank + (files.indexOf(file) + 1)) % 2 === 0;
-        result.push({
-          square,
-          piece: pieceChar,
-          color: isDark ? 'dark' : 'light',
-        });
-      }
-    }
-    return result;
-  }, [chess, userColor]);
-
-  const handleSquareClick = (square: string) => {
-    const file = files.indexOf(square[0] as (typeof files)[number]);
-    const rank = parseInt(square[1], 10) - 1;
-    if (file < 0 || rank < 0) return;
-
-    const coords: SquareCoords = { file, rank };
-
-    const piece = chess.get(square as any);
-
-    if (!selected) {
-      if (!piece) return;
-      const pieceColor = piece.color === 'w' ? 'white' : 'black';
-      if (pieceColor !== userColor) return;
-      setSelected(coords);
-    } else {
-      const fromFileChar = files[selected.file];
-      const fromRank = selected.rank + 1;
-      const fromSquare = `${fromFileChar}${fromRank}`;
-      const moveUci = `${fromSquare}${square}`;
-      setSelected(null);
-      onUserMove(moveUci);
-    }
+  const handlePieceDrop = (sourceSquare: string, targetSquare: string, piece: string) => {
+    // Only allow moving your own pieces and only when it's your turn.
+    const uci = `${sourceSquare}${targetSquare}`;
+    onUserMove(uci);
+    // Let the parent validate and, if needed, snap back via updated FEN.
+    return true;
   };
 
   return (
-    <div className="chessboard">
-      {boardSquares.map((sq) => (
-        <button
-          key={sq.square}
-          type="button"
-          className={`square square-${sq.color}`}
-          onClick={() => handleSquareClick(sq.square)}
-        >
-          {sq.piece ? <span className="piece">{pieceToUnicode(sq.piece)}</span> : null}
-        </button>
-      ))}
+    <div className="board-wrapper">
+      <RcChessboard
+        position={position}
+        boardOrientation={userColor}
+        onPieceDrop={handlePieceDrop}
+        animationDuration={200}
+        arePiecesDraggable={!disabled}
+        customBoardStyle={{
+          borderRadius: '0.75rem',
+          boxShadow: '0 18px 36px rgba(15, 23, 42, 0.7)',
+        }}
+      />
     </div>
   );
 };
-
-function pieceToUnicode(piece: string): string {
-  switch (piece) {
-    case 'P':
-      return '♙';
-    case 'N':
-      return '♘';
-    case 'B':
-      return '♗';
-    case 'R':
-      return '♖';
-    case 'Q':
-      return '♕';
-    case 'K':
-      return '♔';
-    case 'p':
-      return '♟';
-    case 'n':
-      return '♞';
-    case 'b':
-      return '♝';
-    case 'r':
-      return '♜';
-    case 'q':
-      return '♛';
-    case 'k':
-      return '♚';
-    default:
-      return '';
-  }
-}
 
 

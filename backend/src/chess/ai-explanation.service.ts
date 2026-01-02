@@ -13,16 +13,19 @@ export class AiExplanationService {
     analysis: EngineAnalysis,
   ): Promise<string> {
     // TODO: Implement real call to your preferred AI provider using AI_API_KEY.
+    const cp = analysis.evaluation;
     const scoreText =
-      analysis.evaluation !== null
-        ? `evaluation about ${analysis.evaluation} centipawns for the side to move`
-        : 'no concrete evaluation available';
+      cp !== null
+        ? `Stockfish-style evaluation ≈ ${cp} centipawns (positive for the side to move).`
+        : 'no numeric evaluation was returned.';
     const bestMoveText = analysis.bestMove || 'no clear best move';
 
-    return (
-      `Engine recommends ${bestMoveText} with ${scoreText}. ` +
-      'Explain this like a human coach: focus on tactical ideas, piece activity, and long-term plans.'
-    );
+    return [
+      `Suggested move: ${bestMoveText}.`,
+      scoreText,
+      'This comes from a strong cloud engine (similar to Stockfish).',
+      'As you review it, think about: which pieces become more active, what threats are created or neutralized, and whether there were candidate moves you preferred instead.',
+    ].join(' ');
   }
 }
 
