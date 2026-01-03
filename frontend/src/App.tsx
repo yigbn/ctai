@@ -32,7 +32,7 @@ export const App: React.FC = () => {
       <header className="app-header">
         <div className="brand">
           <span className="brand-logo">♟</span>
-          <span className="brand-name">Chess AI Practice</span>
+          <span className="brand-name">Chess Dojo AI</span>
         </div>
         <div className="header-right">
           {auth ? (

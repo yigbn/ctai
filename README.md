@@ -1,6 +1,6 @@
-## Chess AI Practice App (NestJS + React)
+## Chess Dojo AI (NestJS + React)
 
-This project is a **client–server application** for practicing chess against an engine with AI explanations, similar in spirit to the experience on [`senseichess.com`](https://senseichess.com/).
+This project is a **client–server application** for training in the Chess Dojo against an engine with AI explanations, similar in spirit to the experience on [`senseichess.com`](https://senseichess.com/).
 
 ### High-Level Features
 
