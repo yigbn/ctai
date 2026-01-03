@@ -1,5 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 export interface User {
   id: string;
@@ -15,8 +17,53 @@ export interface User {
 }
 
 @Injectable()
-export class UsersService {
+export class UsersService implements OnModuleInit {
   private readonly users: User[] = [];
+  private readonly dataFile = path.join(process.cwd(), 'data', 'users.json');
+
+  async onModuleInit(): Promise<void> {
+    await this.loadFromDisk();
+  }
+
+  private async ensureDataDir() {
+    const dir = path.dirname(this.dataFile);
+    await fs.mkdir(dir, { recursive: true });
+  }
+
+  private async loadFromDisk() {
+    try {
+      const raw = await fs.readFile(this.dataFile, 'utf8');
+      const parsed = JSON.parse(raw) as Array<Omit<User, 'createdAt'> & { createdAt: string }>;
+      this.users.splice(
+        0,
+        this.users.length,
+        ...parsed.map((u) => ({
+          ...u,
+          createdAt: new Date(u.createdAt),
+        })),
+      );
+    } catch (err: any) {
+      if (err?.code === 'ENOENT') {
+        // No data file yet – start with empty array and create file on first write.
+        await this.ensureDataDir();
+        await this.saveToDisk();
+      } else {
+        // Log and continue with empty in-memory users to avoid crashing the app.
+        // eslint-disable-next-line no-console
+        console.error('Failed to load users DB from disk:', err);
+      }
+    }
+  }
+
+  private async saveToDisk() {
+    await this.ensureDataDir();
+    const serializable = this.users.map((u) => ({
+      ...u,
+      // Dates will be stringified automatically; keep explicit for clarity.
+      createdAt: u.createdAt.toISOString(),
+    }));
+    await fs.writeFile(this.dataFile, JSON.stringify(serializable, null, 2), 'utf8');
+  }
 
   async findByEmail(email: string): Promise<User | undefined> {
     return this.users.find((u) => u.email === email);
@@ -32,13 +79,15 @@ export class UsersService {
       throw new Error('User with this email already exists');
     }
     const passwordHash = await bcrypt.hash(password, 10);
+    const nextId = (this.users.length + 1).toString();
     const user: User = {
-      id: (this.users.length + 1).toString(),
+      id: nextId,
       email,
       passwordHash,
       createdAt: new Date(),
     };
     this.users.push(user);
+    await this.saveToDisk();
     return user;
   }
 
@@ -83,6 +132,7 @@ export class UsersService {
       user.lichessUsername = settings.lichessUsername || undefined;
     }
 
+    await this.saveToDisk();
     return user;
   }
 }
