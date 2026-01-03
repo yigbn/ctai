@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
 import { AuthPage } from './components/AuthPage';
 import { PracticePage } from './components/PracticePage';
+import { UserSettings } from './components/UserSettings';
 
 export interface AuthState {
   token: string;
   email: string;
+  displayName?: string;
+  chessComUsername?: string;
+  lichessUsername?: string;
 }
 
 export const App: React.FC = () => {
@@ -18,12 +22,15 @@ export const App: React.FC = () => {
     }
   });
 
+  const [showSettings, setShowSettings] = useState(false);
+
   const handleAuth = (next: AuthState | null) => {
     setAuth(next);
     if (next) {
       localStorage.setItem('auth', JSON.stringify(next));
     } else {
       localStorage.removeItem('auth');
+      setShowSettings(false);
     }
   };
 
@@ -37,7 +44,15 @@ export const App: React.FC = () => {
         <div className="header-right">
           {auth ? (
             <>
-              <span className="user-email">{auth.email}</span>
+              <span className="user-email">
+                {auth.displayName || auth.email}
+              </span>
+              <button
+                className="btn-secondary"
+                onClick={() => setShowSettings((v) => !v)}
+              >
+                Settings
+              </button>
               <button className="btn-secondary" onClick={() => handleAuth(null)}>
                 Logout
               </button>
@@ -48,6 +63,8 @@ export const App: React.FC = () => {
       <main className="app-main">
         {!auth ? (
           <AuthPage onAuthenticated={handleAuth} />
+        ) : showSettings ? (
+          <UserSettings auth={auth} onAuthChange={handleAuth} />
         ) : (
           <PracticePage token={auth.token} />
         )}

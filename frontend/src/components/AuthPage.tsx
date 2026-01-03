@@ -30,7 +30,13 @@ export const AuthPage: React.FC<Props> = ({ onAuthenticated }) => {
         throw new Error(text || 'Authentication failed');
       }
       const json = await res.json();
-      onAuthenticated({ token: json.token, email: json.user.email });
+      onAuthenticated({
+        token: json.token,
+        email: json.user.email,
+        displayName: json.user.displayName,
+        chessComUsername: json.user.chessComUsername,
+        lichessUsername: json.user.lichessUsername,
+      });
     } catch (err: any) {
       setError(err.message ?? 'Unknown error');
     } finally {
