@@ -77,7 +77,7 @@ export const OpeningExplorer: React.FC<Props> = ({ onSelectPosition }) => {
     if (currentFen) {
       onSelectPosition(currentFen);
     }
-  }, [currentFen, onSelectPosition]);
+  }, [currentFen]);
 
   return (
     <div className="opening-explorer">
