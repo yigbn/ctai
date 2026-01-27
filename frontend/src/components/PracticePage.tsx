@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Chess } from 'chess.js';
 import { apiBaseUrl } from '../config';
 import { Chessboard } from './board/Chessboard';
+import { OpeningExplorer } from './openings/OpeningExplorer';
 
 interface Props {
   token: string;
@@ -27,15 +28,18 @@ interface MoveResponse {
   explanation?: string;
 }
 
+type PositionSource = 'opening' | 'myGames' | 'topGame';
+
 export const PracticePage: React.FC<Props> = ({ token }) => {
   const [session, setSession] = useState<Session | null>(null);
-  const [initialFen, setInitialFen] = useState<string>('startpos');
   const [userColor, setUserColor] = useState<'white' | 'black'>('white');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [lastEngineMove, setLastEngineMove] = useState<string | null>(null);
   const [explanation, setExplanation] = useState<string | null>(null);
   const [boardFen, setBoardFen] = useState<string | null>(null);
+  const [positionSource, setPositionSource] = useState<PositionSource>('opening');
+  const [selectedOpeningFen, setSelectedOpeningFen] = useState<string | null>(null);
 
   const authHeaders = useMemo(
     () => ({
@@ -46,18 +50,29 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
   );
 
   const createSession = async () => {
+    const baseFen =
+      positionSource === 'opening'
+        ? boardFen ?? selectedOpeningFen
+        : null;
+
+    if (positionSource === 'opening' && !baseFen) {
+      setStatus('Choose an opening position first.');
+      return;
+    }
+
     setLoading(true);
     setStatus(null);
     setExplanation(null);
     setLastEngineMove(null);
     try {
-      const body =
-        initialFen === 'startpos'
-          ? { userColor }
-          : {
-              initialFen,
-              userColor,
-            };
+      const body: { initialFen?: string; userColor: 'white' | 'black' } = {
+        userColor,
+      };
+
+      if (positionSource === 'opening' && baseFen) {
+        body.initialFen = baseFen;
+      }
+
       const res = await fetch(`${apiBaseUrl}/chess/session`, {
         method: 'POST',
         headers: authHeaders,
@@ -78,11 +93,8 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
     }
   };
 
-  const handleUserMove = async (moveUci: string) => {
-    if (!session) {
-      setStatus('Create a session first.');
-      return;
-    }
+  const handleUserMoveInSession = async (moveUci: string) => {
+    if (!session) return;
     const from = moveUci.slice(0, 2);
     const to = moveUci.slice(2, 4);
 
@@ -126,6 +138,35 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Allow the user to freely tweak the opening position on the client
+  // before starting or restarting a session.
+  const handleUserMovePreview = (moveUci: string) => {
+    const from = moveUci.slice(0, 2);
+    const to = moveUci.slice(2, 4);
+    const rawFen = boardFen ?? selectedOpeningFen ?? new Chess().fen();
+
+    // Force side-to-move to match the side the user selected, so they can
+    // always make a move even if the book position is technically the other
+    // side's turn.
+    const parts = rawFen.split(' ');
+    if (parts.length >= 2) {
+      parts[1] = userColor === 'white' ? 'w' : 'b';
+    }
+    const baseFen = parts.join(' ');
+
+    try {
+      const chess = new Chess(baseFen);
+      const move = chess.move({ from, to, promotion: 'q' });
+      if (!move) {
+        setStatus('Illegal move');
+        return;
+      }
+      setBoardFen(chess.fen());
+    } catch {
+      setStatus('Illegal move');
     }
   };
 
@@ -187,15 +228,6 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
         <div className="setup-card">
           <h2>Start a Training Session</h2>
           <label className="field">
-            <span>Initial position (FEN or “startpos”)</span>
-            <input
-              type="text"
-              value={initialFen}
-              onChange={(e) => setInitialFen(e.target.value)}
-              placeholder="startpos"
-            />
-          </label>
-          <label className="field">
             <span>Your side</span>
             <select
               value={userColor}
@@ -203,6 +235,21 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
             >
               <option value="white">White</option>
               <option value="black">Black</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Training source</span>
+            <select
+              value={positionSource}
+              onChange={(e) => setPositionSource(e.target.value as PositionSource)}
+            >
+              <option value="opening">From opening</option>
+              <option value="myGames" disabled>
+                From my games (coming soon)
+              </option>
+              <option value="topGame" disabled>
+                From top game (coming soon)
+              </option>
             </select>
           </label>
           <button className="btn-primary" onClick={createSession} disabled={loading}>
@@ -229,18 +276,28 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
               boardFen ??
               (session
                 ? session.currentFen
-                : initialFen === 'startpos'
-                  ? new Chess().fen()
-                  : initialFen)
+                : selectedOpeningFen ?? new Chess().fen())
             }
             userColor={session?.userColor ?? userColor}
-            onUserMove={handleUserMove}
-            disabled={loading || !session}
+            onUserMove={positionSource === 'opening' ? handleUserMovePreview : handleUserMoveInSession}
+            disabled={loading}
           />
         </div>
       </section>
 
       <section className="practice-right">
+        {positionSource === 'opening' ? (
+          <div className="panel">
+            <OpeningExplorer
+              onSelectPosition={(fen) => {
+                setSelectedOpeningFen(fen);
+                if (!session) {
+                  setBoardFen(fen);
+                }
+              }}
+            />
+          </div>
+        ) : null}
         <div className="panel">
           <h3>Engine Insight</h3>
           {lastEngineMove ? (
@@ -278,5 +335,4 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
     </div>
   );
 };
-
 
