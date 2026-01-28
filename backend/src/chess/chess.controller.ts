@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ChessService, Color } from './chess.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
@@ -46,6 +46,13 @@ export class ChessController {
   async move(@Param('id') id: string, @Body() body: MoveDto) {
     const result = await this.chessService.userMove(id, body.moveUci);
     return result;
+  }
+
+  @Get('my-games')
+  async getMyGames(@Req() req: any, @Query('limit') limit?: string) {
+    const userId = req.user.sub as string;
+    const parsedLimit = limit ? Number.parseInt(limit, 10) : 15;
+    return this.chessService.getRecentGamesForUser(userId, parsedLimit);
   }
 }
 

@@ -3,6 +3,7 @@ import { Chess } from 'chess.js';
 import { apiBaseUrl } from '../config';
 import { Chessboard } from './board/Chessboard';
 import { OpeningExplorer } from './openings/OpeningExplorer';
+import { GameHistoryExplorer } from './openings/GameHistoryExplorer';
 
 interface Props {
   token: string;
@@ -50,13 +51,11 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
   );
 
   const createSession = async () => {
-    const baseFen =
-      positionSource === 'opening'
-        ? boardFen ?? selectedOpeningFen
-        : null;
+    const usesCustomPosition = positionSource === 'opening' || positionSource === 'myGames';
+    const baseFen = usesCustomPosition ? boardFen ?? selectedOpeningFen : null;
 
-    if (positionSource === 'opening' && !baseFen) {
-      setStatus('Choose an opening position first.');
+    if (usesCustomPosition && !baseFen) {
+      setStatus('Choose a starting position first.');
       return;
     }
 
@@ -69,7 +68,7 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
         userColor,
       };
 
-      if (positionSource === 'opening' && baseFen) {
+      if (usesCustomPosition && baseFen) {
         body.initialFen = baseFen;
       }
 
@@ -244,9 +243,7 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
               onChange={(e) => setPositionSource(e.target.value as PositionSource)}
             >
               <option value="opening">From opening</option>
-              <option value="myGames" disabled>
-                From my games (coming soon)
-              </option>
+              <option value="myGames">From my games</option>
               <option value="topGame" disabled>
                 From top game (coming soon)
               </option>
@@ -289,6 +286,19 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
         {positionSource === 'opening' ? (
           <div className="panel">
             <OpeningExplorer
+              onSelectPosition={(fen) => {
+                setSelectedOpeningFen(fen);
+                if (!session) {
+                  setBoardFen(fen);
+                }
+              }}
+            />
+          </div>
+        ) : null}
+        {positionSource === 'myGames' ? (
+          <div className="panel">
+            <GameHistoryExplorer
+              token={token}
               onSelectPosition={(fen) => {
                 setSelectedOpeningFen(fen);
                 if (!session) {
