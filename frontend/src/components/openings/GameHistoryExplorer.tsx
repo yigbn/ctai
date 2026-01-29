@@ -5,6 +5,12 @@ import { apiBaseUrl } from '../../config';
 interface Props {
   token: string;
   onSelectPosition: (fen: string) => void;
+  /** When false, the main board has deviated from the game line, so we
+   * stop pushing FEN updates and disable navigation. */
+  attached: boolean;
+  /** Called when the user explicitly selects a different game, so the
+   * parent can reset any preview/branch state and re-attach to the game. */
+  onGameChanged?: () => void;
 }
 
 type GameSource = 'lichess' | 'chess.com';
@@ -20,7 +26,12 @@ interface TrainingGame {
   fens: string[];
 }
 
-export const GameHistoryExplorer: React.FC<Props> = ({ token, onSelectPosition }) => {
+export const GameHistoryExplorer: React.FC<Props> = ({
+  token,
+  onSelectPosition,
+  attached,
+  onGameChanged,
+}) => {
   const [games, setGames] = useState<TrainingGame[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,10 +107,10 @@ export const GameHistoryExplorer: React.FC<Props> = ({ token, onSelectPosition }
   }, [selectedGame, clampedPlyIndex]);
 
   useEffect(() => {
-    if (currentFen) {
+    if (currentFen && attached) {
       onSelectPosition(currentFen);
     }
-  }, [currentFen, onSelectPosition]);
+  }, [currentFen, attached, onSelectPosition]);
 
   useEffect(() => {
     // When the selected game changes, start from the 10th ply if possible,
@@ -149,7 +160,13 @@ export const GameHistoryExplorer: React.FC<Props> = ({ token, onSelectPosition }
             <span>Select game</span>
             <select
               value={selectedGame?.id ?? ''}
-              onChange={(e) => setSelectedGameId(e.target.value || null)}
+              onChange={(e) => {
+                const nextId = e.target.value || null;
+                setSelectedGameId(nextId);
+                if (onGameChanged) {
+                  onGameChanged();
+                }
+              }}
             >
               {games.map((g) => (
                 <option key={g.id} value={g.id}>
@@ -181,7 +198,7 @@ export const GameHistoryExplorer: React.FC<Props> = ({ token, onSelectPosition }
                   <button
                     type="button"
                     onClick={handlePrev}
-                    disabled={clampedPlyIndex === 0}
+                    disabled={!attached || clampedPlyIndex === 0}
                     className="btn-secondary"
                   >
                     ◀ Previous move
@@ -189,7 +206,7 @@ export const GameHistoryExplorer: React.FC<Props> = ({ token, onSelectPosition }
                   <button
                     type="button"
                     onClick={handleNext}
-                    disabled={clampedPlyIndex === maxPly}
+                    disabled={!attached || clampedPlyIndex === maxPly}
                     className="btn-secondary"
                   >
                     Next move ▶

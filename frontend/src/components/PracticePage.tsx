@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Chess } from 'chess.js';
 import { apiBaseUrl } from '../config';
 import { Chessboard } from './board/Chessboard';
@@ -41,6 +41,11 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
   const [boardFen, setBoardFen] = useState<string | null>(null);
   const [positionSource, setPositionSource] = useState<PositionSource>('opening');
   const [selectedOpeningFen, setSelectedOpeningFen] = useState<string | null>(null);
+  const [previewMoves, setPreviewMoves] = useState<string[]>([]);
+  const [isPreviewDetached, setIsPreviewDetached] = useState(false);
+
+  const isUsingPreviewSource =
+    positionSource === 'opening' || positionSource === 'myGames';
 
   const authHeaders = useMemo(
     () => ({
@@ -51,7 +56,7 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
   );
 
   const createSession = async () => {
-    const usesCustomPosition = positionSource === 'opening' || positionSource === 'myGames';
+    const usesCustomPosition = isUsingPreviewSource;
     const baseFen = usesCustomPosition ? boardFen ?? selectedOpeningFen : null;
 
     if (usesCustomPosition && !baseFen) {
@@ -84,6 +89,8 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
       const json = (await res.json()) as Session;
       setSession(json);
       setBoardFen(json.currentFen);
+      setPreviewMoves([]);
+      setIsPreviewDetached(false);
       setStatus('Session started');
     } catch (err: any) {
       setStatus(err.message ?? 'Error creating session');
@@ -164,10 +171,20 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
         return;
       }
       setBoardFen(chess.fen());
+      setPreviewMoves((prev) => [...prev, moveUci]);
+      setIsPreviewDetached(true);
     } catch {
       setStatus('Illegal move');
     }
   };
+
+  // Reset preview state when switching training source.
+  useEffect(() => {
+    setPreviewMoves([]);
+    setIsPreviewDetached(false);
+    setBoardFen(null);
+    setSelectedOpeningFen(null);
+  }, [positionSource]);
 
   const resetSession = async () => {
     if (!session) return;
@@ -276,7 +293,11 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
                 : selectedOpeningFen ?? new Chess().fen())
             }
             userColor={session?.userColor ?? userColor}
-            onUserMove={positionSource === 'opening' ? handleUserMovePreview : handleUserMoveInSession}
+            onUserMove={
+              !session && isUsingPreviewSource
+                ? handleUserMovePreview
+                : handleUserMoveInSession
+            }
             disabled={loading}
           />
         </div>
@@ -288,8 +309,9 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
             <OpeningExplorer
               onSelectPosition={(fen) => {
                 setSelectedOpeningFen(fen);
-                if (!session) {
+                if (!session && !isPreviewDetached) {
                   setBoardFen(fen);
+                  setPreviewMoves([]);
                 }
               }}
             />
@@ -301,9 +323,19 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
               token={token}
               onSelectPosition={(fen) => {
                 setSelectedOpeningFen(fen);
-                if (!session) {
+                if (!session && !isPreviewDetached) {
                   setBoardFen(fen);
+                  setPreviewMoves([]);
                 }
+              }}
+              attached={!isPreviewDetached && !session}
+              onGameChanged={() => {
+                // Switching to a new game should behave like picking a new opening:
+                // clear any custom preview branch and re-attach the board to the
+                // selected game's move list.
+                setIsPreviewDetached(false);
+                setPreviewMoves([]);
+                setBoardFen(null);
               }}
             />
           </div>
@@ -334,6 +366,12 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
           {session && session.moveHistory.length > 0 ? (
             <ol className="move-list">
               {session.moveHistory.map((m, idx) => (
+                <li key={`${m}-${idx}`}>{m}</li>
+              ))}
+            </ol>
+          ) : previewMoves.length > 0 ? (
+            <ol className="move-list">
+              {previewMoves.map((m, idx) => (
                 <li key={`${m}-${idx}`}>{m}</li>
               ))}
             </ol>
