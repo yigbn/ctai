@@ -64,6 +64,13 @@ export class UsersService {
     return e ? entityToUser(e) : undefined;
   }
 
+  async findAll(): Promise<User[]> {
+    const entities = await this.userRepo.find({
+      order: { createdAt: 'DESC' },
+    });
+    return entities.map(entityToUser);
+  }
+
   async create(email: string, password: string): Promise<User> {
     const existing = await this.userRepo.findOne({ where: { email } });
     if (existing) {
