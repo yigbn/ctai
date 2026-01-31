@@ -65,6 +65,15 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
     positionSource === 'pgn' ||
     positionSource === 'fen';
 
+  const previewFen =
+    boardFen ??
+    (session ? null : selectedOpeningFen ?? lastPracticePositions[lastPracticeSelectedIndex]?.fen ?? new Chess().fen());
+  const turnToMove = useMemo(() => {
+    if (!previewFen || session) return null;
+    const parts = previewFen.split(/\s/);
+    return parts[1] === 'b' ? 'black' : 'white';
+  }, [previewFen, session]);
+
   const authHeaders = useMemo(
     () => ({
       Authorization: `Bearer ${token}`,
@@ -310,16 +319,6 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
         <div className="setup-card">
           <h2>Practice</h2>
           <label className="field">
-            <span>Your side</span>
-            <select
-              value={userColor}
-              onChange={(e) => setUserColor(e.target.value as 'white' | 'black')}
-            >
-              <option value="white">White</option>
-              <option value="black">Black</option>
-            </select>
-          </label>
-          <label className="field">
             <span>Training source</span>
             <select
               value={positionSource}
@@ -333,7 +332,7 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
               <option value="fen">From FEN</option>
             </select>
           </label>
-          <button className="btn-primary" onClick={createSession} disabled={loading}>
+          <button className="btn-primary btn-start-practice" onClick={createSession} disabled={loading}>
             Start practice
           </button>
           {status ? <div className="status-text">{status}</div> : null}
@@ -343,6 +342,11 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
           <div className="board-header">
             <h2>Board</h2>
             <div className="board-actions">
+              {!session && isUsingPreviewSource && turnToMove != null ? (
+                <span className="turn-indicator" aria-live="polite">
+                  {turnToMove === 'white' ? 'White' : 'Black'} to move
+                </span>
+              ) : null}
               <button onClick={resetSession} disabled={!session || loading} className="btn-secondary">
                 Reset
               </button>

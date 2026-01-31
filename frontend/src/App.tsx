@@ -39,7 +39,7 @@ export const App: React.FC = () => {
       <header className="app-header">
         <div className="brand">
           <span className="brand-logo">♟</span>
-          <span className="brand-name">Chess Dojo AI</span>
+          <span className="brand-name">Chess AI Dojo</span>
         </div>
         <div className="header-right">
           {auth ? (
@@ -69,15 +69,7 @@ export const App: React.FC = () => {
           <PracticePage token={auth.token} />
         )}
       </main>
-      <footer className="app-footer">
-        <span>
-          Inspired by modern AI chess coaches like{' '}
-          <a href="https://senseichess.com/" target="_blank" rel="noreferrer">
-            Sensei Chess
-          </a>
-          .
-        </span>
-      </footer>
+      <footer className="app-footer" />
     </div>
   );
 };
