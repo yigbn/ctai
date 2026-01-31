@@ -9,6 +9,8 @@ import {
   LastPracticesExplorer,
   type LastPracticePosition,
 } from './openings/LastPracticesExplorer';
+import { PgnExplorer } from './openings/PgnExplorer';
+import { FenExplorer } from './openings/FenExplorer';
 
 interface Props {
   token: string;
@@ -34,7 +36,7 @@ interface MoveResponse {
   explanation?: string;
 }
 
-type PositionSource = 'opening' | 'myGames' | 'topGames' | 'lastPractices';
+type PositionSource = 'opening' | 'myGames' | 'topGames' | 'lastPractices' | 'pgn' | 'fen';
 
 export const PracticePage: React.FC<Props> = ({ token }) => {
   const [session, setSession] = useState<Session | null>(null);
@@ -59,7 +61,9 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
     positionSource === 'opening' ||
     positionSource === 'myGames' ||
     positionSource === 'topGames' ||
-    positionSource === 'lastPractices';
+    positionSource === 'lastPractices' ||
+    positionSource === 'pgn' ||
+    positionSource === 'fen';
 
   const authHeaders = useMemo(
     () => ({
@@ -325,6 +329,8 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
               <option value="myGames">From my games</option>
               <option value="topGames">From top games</option>
               <option value="lastPractices">My last practices</option>
+              <option value="pgn">From PGN</option>
+              <option value="fen">From FEN</option>
             </select>
           </label>
           <button className="btn-primary" onClick={createSession} disabled={loading}>
@@ -367,6 +373,33 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
       </section>
 
       <section className="practice-right">
+        {positionSource === 'pgn' ? (
+          <div className="panel">
+            <PgnExplorer
+              attached={!isPreviewDetached && !session}
+              onSelectPosition={(fen) => {
+                setSelectedOpeningFen(fen);
+                if (!session && !isPreviewDetachedRef.current) {
+                  setBoardFen(fen);
+                  setPreviewMoves([]);
+                }
+              }}
+            />
+          </div>
+        ) : null}
+        {positionSource === 'fen' ? (
+          <div className="panel">
+            <FenExplorer
+              onSelectPosition={(fen) => {
+                setSelectedOpeningFen(fen);
+                if (!session && !isPreviewDetachedRef.current) {
+                  setBoardFen(fen);
+                  setPreviewMoves([]);
+                }
+              }}
+            />
+          </div>
+        ) : null}
         {positionSource === 'opening' ? (
           <div className="panel">
             <OpeningExplorer
