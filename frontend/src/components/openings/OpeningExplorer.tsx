@@ -3,10 +3,12 @@ import { Chess } from 'chess.js';
 import { OPENING_BOOK, OpeningLine } from '../../openings/openingBook';
 
 interface Props {
+  /** When false, the main board has deviated from this line; stop pushing FEN and disable nav. */
+  attached: boolean;
   onSelectPosition: (fen: string) => void;
 }
 
-export const OpeningExplorer: React.FC<Props> = ({ onSelectPosition }) => {
+export const OpeningExplorer: React.FC<Props> = ({ attached, onSelectPosition }) => {
   const [selectedId, setSelectedId] = useState<string>(OPENING_BOOK[0]?.id ?? '');
   const [plyIndex, setPlyIndex] = useState<number>(0);
 
@@ -71,13 +73,12 @@ export const OpeningExplorer: React.FC<Props> = ({ onSelectPosition }) => {
     return parts.join(' ');
   }, [opening]);
 
-  // Whenever the current FEN changes (opening or ply), push it up so the
-  // main practice board can show the same position. This keeps us to a single board.
+  // When attached, push current FEN so the main board follows. When detached (user deviated), don't overwrite.
   useEffect(() => {
-    if (currentFen) {
+    if (attached && currentFen) {
       onSelectPosition(currentFen);
     }
-  }, [currentFen]);
+  }, [attached, currentFen, onSelectPosition]);
 
   return (
     <div className="opening-explorer">
@@ -114,7 +115,7 @@ export const OpeningExplorer: React.FC<Props> = ({ onSelectPosition }) => {
               <button
                 type="button"
                 onClick={handlePrev}
-                disabled={clampedPlyIndex === 0}
+                disabled={!attached || clampedPlyIndex === 0}
                 className="btn-secondary"
               >
                 ◀ Previous move
@@ -122,7 +123,7 @@ export const OpeningExplorer: React.FC<Props> = ({ onSelectPosition }) => {
               <button
                 type="button"
                 onClick={handleNext}
-                disabled={clampedPlyIndex === maxPly}
+                disabled={!attached || clampedPlyIndex === maxPly}
                 className="btn-secondary"
               >
                 Next move ▶

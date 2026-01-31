@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Chess } from 'chess.js';
 import { apiBaseUrl } from '../config';
 import { Chessboard } from './board/Chessboard';
@@ -44,6 +44,10 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
   const [selectedOpeningFen, setSelectedOpeningFen] = useState<string | null>(null);
   const [previewMoves, setPreviewMoves] = useState<string[]>([]);
   const [isPreviewDetached, setIsPreviewDetached] = useState(false);
+  const isPreviewDetachedRef = useRef(false);
+  useEffect(() => {
+    isPreviewDetachedRef.current = isPreviewDetached;
+  }, [isPreviewDetached]);
 
   const isUsingPreviewSource =
     positionSource === 'opening' || positionSource === 'myGames' || positionSource === 'topGames';
@@ -306,9 +310,10 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
         {positionSource === 'opening' ? (
           <div className="panel">
             <OpeningExplorer
+              attached={!isPreviewDetached && !session}
               onSelectPosition={(fen) => {
                 setSelectedOpeningFen(fen);
-                if (!session && !isPreviewDetached) {
+                if (!session && !isPreviewDetachedRef.current) {
                   setBoardFen(fen);
                   setPreviewMoves([]);
                 }
@@ -322,7 +327,7 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
               token={token}
               onSelectPosition={(fen) => {
                 setSelectedOpeningFen(fen);
-                if (!session && !isPreviewDetached) {
+                if (!session && !isPreviewDetachedRef.current) {
                   setBoardFen(fen);
                   setPreviewMoves([]);
                 }
@@ -342,7 +347,7 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
               token={token}
               onSelectPosition={(fen) => {
                 setSelectedOpeningFen(fen);
-                if (!session && !isPreviewDetached) {
+                if (!session && !isPreviewDetachedRef.current) {
                   setBoardFen(fen);
                   setPreviewMoves([]);
                 }
