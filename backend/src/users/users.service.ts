@@ -1,11 +1,12 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
-import * as fs from 'fs/promises';
-import * as path from 'path';
+import { UserEntity } from './entities/user.entity';
 
 export interface LastPracticePosition {
   fen: string;
-  savedAt: string; // ISO date
+  savedAt: string;
 }
 
 export interface User {
@@ -13,112 +14,79 @@ export interface User {
   email: string;
   passwordHash: string;
   createdAt: Date;
-  /** Optional display name for the user */
   displayName?: string;
-  /** Optional username on chess.com */
   chessComUsername?: string;
-  /** Optional username on lichess.org */
   lichessUsername?: string;
-  /** Last 15 practice start positions (newest first) */
   lastPracticePositions?: LastPracticePosition[];
 }
 
+const MAX_PRACTICE_POSITIONS = 15;
+
+function parsePositionsJson(json: string | null | undefined): LastPracticePosition[] {
+  if (!json) return [];
+  try {
+    const arr = JSON.parse(json) as LastPracticePosition[];
+    return Array.isArray(arr) ? arr.slice(0, MAX_PRACTICE_POSITIONS) : [];
+  } catch {
+    return [];
+  }
+}
+
+function entityToUser(e: UserEntity): User {
+  return {
+    id: String(e.id),
+    email: e.email,
+    passwordHash: e.passwordHash,
+    createdAt: e.createdAt,
+    displayName: e.displayName ?? undefined,
+    chessComUsername: e.chessComUsername ?? undefined,
+    lichessUsername: e.lichessUsername ?? undefined,
+    lastPracticePositions: parsePositionsJson(e.lastPracticePositionsJson),
+  };
+}
+
 @Injectable()
-export class UsersService implements OnModuleInit {
-  private readonly users: User[] = [];
-  private readonly dataFile = path.join(process.cwd(), 'data', 'users.json');
-
-  async onModuleInit(): Promise<void> {
-    await this.loadFromDisk();
-  }
-
-  private async ensureDataDir() {
-    const dir = path.dirname(this.dataFile);
-    await fs.mkdir(dir, { recursive: true });
-  }
-
-  private async loadFromDisk() {
-    try {
-      const raw = await fs.readFile(this.dataFile, 'utf8');
-      const parsed = JSON.parse(raw) as Array<Omit<User, 'createdAt'> & { createdAt: string }>;
-      this.users.splice(
-        0,
-        this.users.length,
-        ...parsed.map((u) => ({
-          ...u,
-          createdAt: new Date(u.createdAt),
-          lastPracticePositions: Array.isArray(u.lastPracticePositions)
-            ? u.lastPracticePositions.slice(0, 15)
-            : [],
-        })),
-      );
-    } catch (err: any) {
-      if (err?.code === 'ENOENT') {
-        // No data file yet – start with empty array and create file on first write.
-        await this.ensureDataDir();
-        await this.saveToDisk();
-      } else {
-        // Log and continue with empty in-memory users to avoid crashing the app.
-        // eslint-disable-next-line no-console
-        console.error('Failed to load users DB from disk:', err);
-      }
-    }
-  }
-
-  private async saveToDisk() {
-    await this.ensureDataDir();
-    const serializable = this.users.map((u) => ({
-      ...u,
-      // Dates will be stringified automatically; keep explicit for clarity.
-      createdAt: u.createdAt.toISOString(),
-    }));
-    await fs.writeFile(this.dataFile, JSON.stringify(serializable, null, 2), 'utf8');
-  }
+export class UsersService {
+  constructor(
+    @InjectRepository(UserEntity)
+    private readonly userRepo: Repository<UserEntity>,
+  ) {}
 
   async findByEmail(email: string): Promise<User | undefined> {
-    return this.users.find((u) => u.email === email);
+    const e = await this.userRepo.findOne({ where: { email } });
+    return e ? entityToUser(e) : undefined;
   }
 
   async findById(id: string): Promise<User | undefined> {
-    return this.users.find((u) => u.id === id);
+    const numId = Number(id);
+    if (Number.isNaN(numId) || numId < 1) return undefined;
+    const e = await this.userRepo.findOne({ where: { id: numId } });
+    return e ? entityToUser(e) : undefined;
   }
 
   async create(email: string, password: string): Promise<User> {
-    const existing = await this.findByEmail(email);
+    const existing = await this.userRepo.findOne({ where: { email } });
     if (existing) {
       throw new Error('User with this email already exists');
     }
     const passwordHash = await bcrypt.hash(password, 10);
-    const nextId = (this.users.length + 1).toString();
-    const user: User = {
-      id: nextId,
+    const entity = this.userRepo.create({
       email,
       passwordHash,
-      createdAt: new Date(),
-    };
-    this.users.push(user);
-    await this.saveToDisk();
-    return user;
+    });
+    const saved = await this.userRepo.save(entity);
+    return entityToUser(saved);
   }
 
   async verifyPassword(user: User, password: string): Promise<boolean> {
     return bcrypt.compare(password, user.passwordHash);
   }
 
-  /**
-   * Return a copy of the user object without sensitive fields like passwordHash.
-   * This is useful for sending user data to the client.
-   */
   sanitizeUser(user: User): Omit<User, 'passwordHash'> {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { passwordHash, ...rest } = user;
+    const { passwordHash: _, ...rest } = user;
     return rest;
   }
 
-  /**
-   * Update the (optional) settings/profile fields for a user.
-   * All fields are optional; only provided keys will be updated.
-   */
   async updateSettings(
     id: string,
     settings: {
@@ -128,29 +96,33 @@ export class UsersService implements OnModuleInit {
       lastPracticePositions?: LastPracticePosition[] | null;
     },
   ): Promise<User> {
-    const user = await this.findById(id);
-    if (!user) {
+    const numId = Number(id);
+    if (Number.isNaN(numId) || numId < 1) {
+      throw new Error('User not found');
+    }
+    const e = await this.userRepo.findOne({ where: { id: numId } });
+    if (!e) {
       throw new Error('User not found');
     }
 
     if (settings.displayName !== undefined) {
-      user.displayName = settings.displayName || undefined;
+      e.displayName = settings.displayName ?? null;
     }
     if (settings.chessComUsername !== undefined) {
-      user.chessComUsername = settings.chessComUsername || undefined;
+      e.chessComUsername = settings.chessComUsername ?? null;
     }
     if (settings.lichessUsername !== undefined) {
-      user.lichessUsername = settings.lichessUsername || undefined;
+      e.lichessUsername = settings.lichessUsername ?? null;
     }
     if (settings.lastPracticePositions !== undefined) {
-      user.lastPracticePositions = Array.isArray(settings.lastPracticePositions)
-        ? settings.lastPracticePositions.slice(0, 15)
+      const list = Array.isArray(settings.lastPracticePositions)
+        ? settings.lastPracticePositions.slice(0, MAX_PRACTICE_POSITIONS)
         : [];
+      e.lastPracticePositionsJson =
+        list.length > 0 ? JSON.stringify(list) : null;
     }
 
-    await this.saveToDisk();
-    return user;
+    await this.userRepo.save(e);
+    return entityToUser(e);
   }
 }
-
-
