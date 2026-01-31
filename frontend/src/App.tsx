@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AuthPage } from './components/AuthPage';
 import { PracticePage } from './components/PracticePage';
+import { PracticeGuide } from './components/PracticeGuide';
 import { UserSettings } from './components/UserSettings';
 
 export interface AuthState {
@@ -23,6 +24,7 @@ export const App: React.FC = () => {
   });
 
   const [showSettings, setShowSettings] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
 
   const handleAuth = (next: AuthState | null) => {
     setAuth(next);
@@ -31,6 +33,7 @@ export const App: React.FC = () => {
     } else {
       localStorage.removeItem('auth');
       setShowSettings(false);
+      setShowGuide(false);
     }
   };
 
@@ -47,6 +50,14 @@ export const App: React.FC = () => {
               <span className="user-email">
                 {auth.displayName || auth.email}
               </span>
+              {!showGuide ? (
+                <button
+                  className="btn-secondary"
+                  onClick={() => setShowGuide(true)}
+                >
+                  Guide
+                </button>
+              ) : null}
               <button
                 className="btn-secondary"
                 onClick={() => setShowSettings((v) => !v)}
@@ -64,7 +75,9 @@ export const App: React.FC = () => {
         {!auth ? (
           <AuthPage onAuthenticated={handleAuth} />
         ) : showSettings ? (
-          <UserSettings auth={auth} onAuthChange={handleAuth} />
+          <UserSettings auth={auth} onAuthChange={handleAuth} onBack={() => setShowSettings(false)} />
+        ) : showGuide ? (
+          <PracticeGuide onBack={() => setShowGuide(false)} />
         ) : (
           <PracticePage token={auth.token} />
         )}

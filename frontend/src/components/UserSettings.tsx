@@ -5,9 +5,10 @@ import { apiBaseUrl } from '../config';
 interface Props {
   auth: AuthState;
   onAuthChange: (next: AuthState) => void;
+  onBack: () => void;
 }
 
-export const UserSettings: React.FC<Props> = ({ auth, onAuthChange }) => {
+export const UserSettings: React.FC<Props> = ({ auth, onAuthChange, onBack }) => {
   const [displayName, setDisplayName] = useState(auth.displayName ?? '');
   const [chessComUsername, setChessComUsername] = useState(auth.chessComUsername ?? '');
   const [lichessUsername, setLichessUsername] = useState(auth.lichessUsername ?? '');
@@ -56,6 +57,9 @@ export const UserSettings: React.FC<Props> = ({ auth, onAuthChange }) => {
   return (
     <div className="settings-page">
       <div className="settings-card">
+        <button type="button" className="btn-back" onClick={onBack} aria-label="Back to practice">
+          ← Back
+        </button>
         <h2>User Settings</h2>
         <p className="settings-subtitle">
           All fields are optional. These will be used later to integrate with your online chess
