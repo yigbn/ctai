@@ -12,10 +12,16 @@ interface AuthedRequest extends Request {
   user: JwtPayload;
 }
 
+class LastPracticePositionDto {
+  fen!: string;
+  savedAt!: string;
+}
+
 class UpdateSettingsDto {
   displayName?: string;
   chessComUsername?: string;
   lichessUsername?: string;
+  lastPracticePositions?: LastPracticePositionDto[];
 }
 
 @UseGuards(JwtAuthGuard)

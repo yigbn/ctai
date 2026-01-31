@@ -6,6 +6,16 @@
     "createdAt": "2026-01-03T15:25:13.620Z",
     "displayName": "yig",
     "chessComUsername": "yigbn",
-    "lichessUsername": "yigbn"
+    "lichessUsername": "yigbn",
+    "lastPracticePositions": [
+      {
+        "fen": "rnbq1rk1/p1p1ppb1/1p1p1np1/7p/P7/1P2PNP1/1BPPBP1P/RN1QK2R w KQ - 0 8",
+        "savedAt": "2026-01-31T13:25:03.009Z"
+      },
+      {
+        "fen": "rnbq1rk1/ppp1ppb1/3p1np1/7p/8/1P2PNP1/PBPPBP1P/RN1QK2R w KQ - 0 7",
+        "savedAt": "2026-01-31T13:24:49.465Z"
+      }
+    ]
   }
 ]

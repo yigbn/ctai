@@ -5,6 +5,10 @@ import { Chessboard } from './board/Chessboard';
 import { OpeningExplorer } from './openings/OpeningExplorer';
 import { GameHistoryExplorer } from './openings/GameHistoryExplorer';
 import { TopGamesExplorer } from './openings/TopGamesExplorer';
+import {
+  LastPracticesExplorer,
+  type LastPracticePosition,
+} from './openings/LastPracticesExplorer';
 
 interface Props {
   token: string;
@@ -30,7 +34,7 @@ interface MoveResponse {
   explanation?: string;
 }
 
-type PositionSource = 'opening' | 'myGames' | 'topGames';
+type PositionSource = 'opening' | 'myGames' | 'topGames' | 'lastPractices';
 
 export const PracticePage: React.FC<Props> = ({ token }) => {
   const [session, setSession] = useState<Session | null>(null);
@@ -44,13 +48,18 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
   const [selectedOpeningFen, setSelectedOpeningFen] = useState<string | null>(null);
   const [previewMoves, setPreviewMoves] = useState<string[]>([]);
   const [isPreviewDetached, setIsPreviewDetached] = useState(false);
+  const [lastPracticePositions, setLastPracticePositions] = useState<LastPracticePosition[]>([]);
+  const [lastPracticeSelectedIndex, setLastPracticeSelectedIndex] = useState(0);
   const isPreviewDetachedRef = useRef(false);
   useEffect(() => {
     isPreviewDetachedRef.current = isPreviewDetached;
   }, [isPreviewDetached]);
 
   const isUsingPreviewSource =
-    positionSource === 'opening' || positionSource === 'myGames' || positionSource === 'topGames';
+    positionSource === 'opening' ||
+    positionSource === 'myGames' ||
+    positionSource === 'topGames' ||
+    positionSource === 'lastPractices';
 
   const authHeaders = useMemo(
     () => ({
@@ -60,9 +69,39 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
     [token],
   );
 
+  // Fetch last practice positions when switching to "My last practices".
+  useEffect(() => {
+    if (positionSource !== 'lastPractices') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${apiBaseUrl}/users/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok || cancelled) return;
+        const user = (await res.json()) as { lastPracticePositions?: LastPracticePosition[] };
+        if (cancelled) return;
+        const list = Array.isArray(user?.lastPracticePositions) ? user.lastPracticePositions : [];
+        setLastPracticePositions(list);
+        setLastPracticeSelectedIndex(0);
+        if (list.length > 0 && !isPreviewDetachedRef.current) {
+          setBoardFen(list[0].fen);
+          setSelectedOpeningFen(list[0].fen);
+        }
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [positionSource, token]);
+
   const createSession = async () => {
     const usesCustomPosition = isUsingPreviewSource;
-    const baseFen = usesCustomPosition ? boardFen ?? selectedOpeningFen : null;
+    const baseFen = usesCustomPosition
+      ? boardFen ?? selectedOpeningFen ?? lastPracticePositions[lastPracticeSelectedIndex]?.fen ?? null
+      : null;
 
     if (usesCustomPosition && !baseFen) {
       setStatus('Choose a starting position first.');
@@ -92,13 +131,33 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
         throw new Error(text || 'Failed to create session');
       }
       const json = (await res.json()) as Session;
+      isPreviewDetachedRef.current = false;
       setSession(json);
       setBoardFen(json.currentFen);
       setPreviewMoves([]);
       setIsPreviewDetached(false);
-      setStatus('Session started');
+      setStatus('Practice started');
+
+      // Save this start position to last practices (max 15).
+      if (usesCustomPosition && baseFen) {
+        const newEntry: LastPracticePosition = {
+          fen: baseFen,
+          savedAt: new Date().toISOString(),
+        };
+        const nextList = [newEntry, ...lastPracticePositions].slice(0, 15);
+        setLastPracticePositions(nextList);
+        try {
+          await fetch(`${apiBaseUrl}/users/me`, {
+            method: 'PATCH',
+            headers: authHeaders,
+            body: JSON.stringify({ lastPracticePositions: nextList }),
+          });
+        } catch {
+          // non-fatal
+        }
+      }
     } catch (err: any) {
-      setStatus(err.message ?? 'Error creating session');
+      setStatus(err.message ?? 'Error starting practice');
     } finally {
       setLoading(false);
     }
@@ -155,23 +214,18 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
   // Allow the user to freely tweak the opening position on the client
   // before starting or restarting a session.
   const handleUserMovePreview = (moveUci: string) => {
+    // Set ref immediately so any explorer effect in this commit cannot overwrite boardFen.
+    isPreviewDetachedRef.current = true;
+
     const from = moveUci.slice(0, 2);
     const to = moveUci.slice(2, 4);
-    const rawFen = boardFen ?? selectedOpeningFen ?? new Chess().fen();
-
-    // Force side-to-move to match the side the user selected, so they can
-    // always make a move even if the book position is technically the other
-    // side's turn.
-    const parts = rawFen.split(' ');
-    if (parts.length >= 2) {
-      parts[1] = userColor === 'white' ? 'w' : 'b';
-    }
-    const baseFen = parts.join(' ');
+    const baseFen = boardFen ?? selectedOpeningFen ?? new Chess().fen();
 
     try {
       const chess = new Chess(baseFen);
       const move = chess.move({ from, to, promotion: 'q' });
       if (!move) {
+        isPreviewDetachedRef.current = false;
         setStatus('Illegal move');
         return;
       }
@@ -179,12 +233,15 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
       setPreviewMoves((prev) => [...prev, moveUci]);
       setIsPreviewDetached(true);
     } catch {
+      isPreviewDetachedRef.current = false;
       setStatus('Illegal move');
     }
   };
 
-  // Reset preview state when switching training source.
+  // Reset preview state when switching training source. Abort current session when changing source.
   useEffect(() => {
+    setSession(null);
+    isPreviewDetachedRef.current = false;
     setPreviewMoves([]);
     setIsPreviewDetached(false);
     setBoardFen(null);
@@ -247,7 +304,7 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
     <div className="practice-page">
       <section className="practice-left">
         <div className="setup-card">
-          <h2>Start a Training Session</h2>
+          <h2>Practice</h2>
           <label className="field">
             <span>Your side</span>
             <select
@@ -267,10 +324,11 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
               <option value="opening">From opening</option>
               <option value="myGames">From my games</option>
               <option value="topGames">From top games</option>
+              <option value="lastPractices">My last practices</option>
             </select>
           </label>
           <button className="btn-primary" onClick={createSession} disabled={loading}>
-            {session ? 'Restart from new position' : 'Start session'}
+            Start practice
           </button>
           {status ? <div className="status-text">{status}</div> : null}
         </div>
@@ -293,7 +351,9 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
               boardFen ??
               (session
                 ? session.currentFen
-                : selectedOpeningFen ?? new Chess().fen())
+                : selectedOpeningFen ??
+                  lastPracticePositions[lastPracticeSelectedIndex]?.fen ??
+                  new Chess().fen())
             }
             userColor={session?.userColor ?? userColor}
             onUserMove={
@@ -334,6 +394,7 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
               }}
               attached={!isPreviewDetached && !session}
               onGameChanged={() => {
+                setSession(null);
                 setIsPreviewDetached(false);
                 setPreviewMoves([]);
                 setBoardFen(null);
@@ -354,10 +415,29 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
               }}
               attached={!isPreviewDetached && !session}
               onGameChanged={() => {
+                setSession(null);
                 setIsPreviewDetached(false);
                 setPreviewMoves([]);
                 setBoardFen(null);
               }}
+            />
+          </div>
+        ) : null}
+        {positionSource === 'lastPractices' ? (
+          <div className="panel">
+            <LastPracticesExplorer
+              positions={lastPracticePositions}
+              selectedIndex={lastPracticeSelectedIndex}
+              onSelectPosition={(fen, index) => {
+                setLastPracticeSelectedIndex(index);
+                setSelectedOpeningFen(fen);
+                if (!session && !isPreviewDetachedRef.current) {
+                  setBoardFen(fen);
+                  setPreviewMoves([]);
+                }
+              }}
+              attached={!isPreviewDetached && !session}
+              onPositionChanged={() => setSession(null)}
             />
           </div>
         ) : null}
@@ -390,14 +470,10 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
                 <li key={`${m}-${idx}`}>{m}</li>
               ))}
             </ol>
-          ) : previewMoves.length > 0 ? (
-            <ol className="move-list">
-              {previewMoves.map((m, idx) => (
-                <li key={`${m}-${idx}`}>{m}</li>
-              ))}
-            </ol>
-          ) : (
+          ) : session ? (
             <p>No moves played yet.</p>
+          ) : (
+            <p>No moves yet. Start practice to play.</p>
           )}
         </div>
       </section>

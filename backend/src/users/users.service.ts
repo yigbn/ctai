@@ -3,6 +3,11 @@ import * as bcrypt from 'bcryptjs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
+export interface LastPracticePosition {
+  fen: string;
+  savedAt: string; // ISO date
+}
+
 export interface User {
   id: string;
   email: string;
@@ -14,6 +19,8 @@ export interface User {
   chessComUsername?: string;
   /** Optional username on lichess.org */
   lichessUsername?: string;
+  /** Last 15 practice start positions (newest first) */
+  lastPracticePositions?: LastPracticePosition[];
 }
 
 @Injectable()
@@ -40,6 +47,9 @@ export class UsersService implements OnModuleInit {
         ...parsed.map((u) => ({
           ...u,
           createdAt: new Date(u.createdAt),
+          lastPracticePositions: Array.isArray(u.lastPracticePositions)
+            ? u.lastPracticePositions.slice(0, 15)
+            : [],
         })),
       );
     } catch (err: any) {
@@ -115,6 +125,7 @@ export class UsersService implements OnModuleInit {
       displayName?: string | null;
       chessComUsername?: string | null;
       lichessUsername?: string | null;
+      lastPracticePositions?: LastPracticePosition[] | null;
     },
   ): Promise<User> {
     const user = await this.findById(id);
@@ -130,6 +141,11 @@ export class UsersService implements OnModuleInit {
     }
     if (settings.lichessUsername !== undefined) {
       user.lichessUsername = settings.lichessUsername || undefined;
+    }
+    if (settings.lastPracticePositions !== undefined) {
+      user.lastPracticePositions = Array.isArray(settings.lastPracticePositions)
+        ? settings.lastPracticePositions.slice(0, 15)
+        : [];
     }
 
     await this.saveToDisk();
