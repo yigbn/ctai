@@ -54,6 +54,12 @@ export class ChessController {
     const parsedLimit = limit ? Number.parseInt(limit, 10) : 15;
     return this.chessService.getRecentGamesForUser(userId, parsedLimit);
   }
+
+  @Get('top-games')
+  async getTopGames(@Query('limit') limit?: string) {
+    const parsedLimit = limit ? Number.parseInt(limit, 10) : 15;
+    return this.chessService.getTopGames(parsedLimit);
+  }
 }
 
 

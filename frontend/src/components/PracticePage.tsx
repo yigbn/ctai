@@ -4,6 +4,7 @@ import { apiBaseUrl } from '../config';
 import { Chessboard } from './board/Chessboard';
 import { OpeningExplorer } from './openings/OpeningExplorer';
 import { GameHistoryExplorer } from './openings/GameHistoryExplorer';
+import { TopGamesExplorer } from './openings/TopGamesExplorer';
 
 interface Props {
   token: string;
@@ -29,7 +30,7 @@ interface MoveResponse {
   explanation?: string;
 }
 
-type PositionSource = 'opening' | 'myGames' | 'topGame';
+type PositionSource = 'opening' | 'myGames' | 'topGames';
 
 export const PracticePage: React.FC<Props> = ({ token }) => {
   const [session, setSession] = useState<Session | null>(null);
@@ -45,7 +46,7 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
   const [isPreviewDetached, setIsPreviewDetached] = useState(false);
 
   const isUsingPreviewSource =
-    positionSource === 'opening' || positionSource === 'myGames';
+    positionSource === 'opening' || positionSource === 'myGames' || positionSource === 'topGames';
 
   const authHeaders = useMemo(
     () => ({
@@ -261,9 +262,7 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
             >
               <option value="opening">From opening</option>
               <option value="myGames">From my games</option>
-              <option value="topGame" disabled>
-                From top game (coming soon)
-              </option>
+              <option value="topGames">From top games</option>
             </select>
           </label>
           <button className="btn-primary" onClick={createSession} disabled={loading}>
@@ -330,9 +329,26 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
               }}
               attached={!isPreviewDetached && !session}
               onGameChanged={() => {
-                // Switching to a new game should behave like picking a new opening:
-                // clear any custom preview branch and re-attach the board to the
-                // selected game's move list.
+                setIsPreviewDetached(false);
+                setPreviewMoves([]);
+                setBoardFen(null);
+              }}
+            />
+          </div>
+        ) : null}
+        {positionSource === 'topGames' ? (
+          <div className="panel">
+            <TopGamesExplorer
+              token={token}
+              onSelectPosition={(fen) => {
+                setSelectedOpeningFen(fen);
+                if (!session && !isPreviewDetached) {
+                  setBoardFen(fen);
+                  setPreviewMoves([]);
+                }
+              }}
+              attached={!isPreviewDetached && !session}
+              onGameChanged={() => {
                 setIsPreviewDetached(false);
                 setPreviewMoves([]);
                 setBoardFen(null);

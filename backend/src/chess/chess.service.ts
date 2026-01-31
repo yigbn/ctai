@@ -1,9 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 import axios from 'axios';
 import { Chess } from 'chess.js';
 import { EngineService, EngineAnalysis } from './engine.service';
 import { AiExplanationService } from './ai-explanation.service';
 import { UsersService } from '../users/users.service';
+
+const TOP_GAMES_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const TOP_GAMES_REQUEST_TIMEOUT_MS = 12_000; // 12s per request
 
 export type Color = 'white' | 'black';
 
@@ -139,6 +144,193 @@ export class ChessService {
     return { session, engineMove, analysis, explanation };
   }
 
+  /** Path for top-games cache file (same for all users). */
+  private getTopGamesCachePath(): string {
+    const dir = process.env.TOP_GAMES_CACHE_DIR ?? path.join(process.cwd(), '.cache');
+    return path.join(dir, 'top-games.json');
+  }
+
+  private async readTopGamesCache(): Promise<TrainingGame[] | null> {
+    const filePath = this.getTopGamesCachePath();
+    try {
+      const raw = await fs.readFile(filePath, 'utf-8');
+      const data = JSON.parse(raw) as { cachedAt: string; games: TrainingGame[] };
+      if (!data?.cachedAt || !Array.isArray(data.games)) return null;
+      const age = Date.now() - new Date(data.cachedAt).getTime();
+      if (age >= TOP_GAMES_CACHE_TTL_MS) return null;
+      return data.games;
+    } catch {
+      return null;
+    }
+  }
+
+  private async writeTopGamesCache(games: TrainingGame[]): Promise<void> {
+    const filePath = this.getTopGamesCachePath();
+    const dir = path.dirname(filePath);
+    try {
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(
+        filePath,
+        JSON.stringify({ cachedAt: new Date().toISOString(), games }),
+        'utf-8',
+      );
+    } catch {
+      // Non-fatal: skip cache write
+    }
+  }
+
+  /** Fetches recent/live top games (cached 6h). Prefers Lichess broadcast (live), fallback: top rapid player. */
+  async getTopGames(limit: number): Promise<TrainingGame[]> {
+    const safeLimit = Math.max(1, Math.min(50, Number.isFinite(limit) ? limit : 15));
+
+    const cached = await this.readTopGamesCache();
+    if (cached && cached.length > 0) {
+      return cached.slice(0, safeLimit);
+    }
+
+    const timeout = { timeout: TOP_GAMES_REQUEST_TIMEOUT_MS };
+
+    // 1) Prefer live: Lichess broadcast (one PGN request with many games)
+    const fromBroadcast = await this.fetchTopGamesFromBroadcast(safeLimit, timeout);
+    if (fromBroadcast.length >= Math.min(10, safeLimit)) {
+      await this.writeTopGamesCache(fromBroadcast);
+      return fromBroadcast.slice(0, safeLimit);
+    }
+
+    // 2) Fallback: single top rapid player (2 requests, fast)
+    const fromLeaderboard = await this.fetchTopGamesFromLeaderboard(safeLimit, timeout);
+    if (fromLeaderboard.length > 0) {
+      await this.writeTopGamesCache(fromLeaderboard);
+      return fromLeaderboard.slice(0, safeLimit);
+    }
+
+    return fromBroadcast.slice(0, safeLimit);
+  }
+
+  /** Returns broadcast IDs to try (from API or fallback list). */
+  private async discoverBroadcastIds(opts: { timeout: number }): Promise<string[]> {
+    try {
+      const res = await axios.get<string>('https://lichess.org/api/broadcast', {
+        responseType: 'text',
+        validateStatus: (s) => s === 200,
+        ...opts,
+      });
+      if (res.status !== 200 || !res.data) return this.getFallbackBroadcastIds();
+      const text = String(res.data).trim();
+      const ids: string[] = [];
+      // Response can be NDJSON (one object per line) or JSON array
+      if (text.startsWith('[')) {
+        const arr = JSON.parse(text) as any[];
+        for (const item of Array.isArray(arr) ? arr : []) {
+          const id = item?.id ?? item?.broadcast?.id;
+          if (typeof id === 'string') ids.push(id);
+        }
+      } else {
+        for (const line of text.split('\n').filter(Boolean)) {
+          try {
+            const obj = JSON.parse(line) as any;
+            const id = obj?.id ?? obj?.broadcast?.id;
+            if (typeof id === 'string') ids.push(id);
+          } catch {
+            // skip line
+          }
+        }
+      }
+      if (ids.length > 0) return ids.slice(0, 5);
+    } catch {
+      // ignore
+    }
+    return this.getFallbackBroadcastIds();
+  }
+
+  private getFallbackBroadcastIds(): string[] {
+    return ['MFr6IhpK']; // Example; update from lichess.org/broadcast if needed
+  }
+
+  /** Tries to load games from a recent Lichess broadcast (live tournament games). */
+  private async fetchTopGamesFromBroadcast(
+    limit: number,
+    opts: { timeout: number },
+  ): Promise<TrainingGame[]> {
+    const broadcastIds = await this.discoverBroadcastIds(opts);
+    for (const broadcastId of broadcastIds) {
+      try {
+        const url = `https://lichess.org/api/broadcast/${broadcastId}.pgn`;
+        const res = await axios.get<string>(url, {
+          responseType: 'text',
+          validateStatus: (s) => s === 200,
+          ...opts,
+        });
+        if (res.status !== 200 || !res.data) continue;
+        const games = this.parseBroadcastPgn(String(res.data), broadcastId, limit);
+        if (games.length > 0) return games;
+      } catch {
+        continue;
+      }
+    }
+    return [];
+  }
+
+  /** Parses multi-game PGN from a broadcast into TrainingGame[]. */
+  private parseBroadcastPgn(pgnText: string, broadcastId: string, limit: number): TrainingGame[] {
+    const games: TrainingGame[] = [];
+    const blocks = pgnText.split(/\n\n(?=\[Event)/);
+    for (const block of blocks) {
+      if (games.length >= limit) break;
+      const pgn = block.trim();
+      if (!pgn) continue;
+      const fens = this.buildFenSequenceFromPgn(pgn);
+      if (!fens.length) continue;
+      const white = this.getPgnTag(pgn, 'White') ?? 'White';
+      const black = this.getPgnTag(pgn, 'Black') ?? 'Black';
+      const result = this.getPgnTag(pgn, 'Result') ?? '*';
+      const date = this.getPgnTag(pgn, 'Date') ?? '';
+      const gameId = this.getPgnTag(pgn, 'Site')?.split('/').pop() ?? `broadcast-${games.length}`;
+      const endTime = date ? `${date}T23:59:59.000Z` : new Date().toISOString();
+      games.push({
+        id: `broadcast-${broadcastId}-${gameId}`,
+        source: 'lichess',
+        url: `https://lichess.org/broadcast/${broadcastId}`,
+        white,
+        black,
+        result,
+        endTime,
+        fens,
+      });
+    }
+    games.sort((a, b) => new Date(b.endTime).getTime() - new Date(a.endTime).getTime());
+    return games.slice(0, limit);
+  }
+
+  private getPgnTag(pgn: string, tag: string): string | undefined {
+    const re = new RegExp(`\\[${tag}\\s+"([^"]*)"\\]`);
+    const m = pgn.match(re);
+    return m ? m[1] : undefined;
+  }
+
+  /** Fallback: games from the current top rapid player (2 requests). */
+  private async fetchTopGamesFromLeaderboard(
+    limit: number,
+    opts: { timeout: number },
+  ): Promise<TrainingGame[]> {
+    let res: any;
+    try {
+      res = await axios.get('https://lichess.org/api/player/top/1/rapid', {
+        validateStatus: () => true,
+        ...opts,
+      });
+    } catch {
+      return [];
+    }
+    if (res.status !== 200 || !res.data?.users?.length) return [];
+    const user = res.data.users[0];
+    const username: string = user?.username ?? user?.id;
+    if (!username) return [];
+    const games = await this.fetchLichessGames(username, limit, opts);
+    games.sort((a, b) => new Date(b.endTime).getTime() - new Date(a.endTime).getTime());
+    return games.slice(0, limit);
+  }
+
   async getRecentGamesForUser(userId: string, limit: number): Promise<TrainingGame[]> {
     const user = await this.usersService.findById(userId);
     if (!user) {
@@ -181,6 +373,7 @@ export class ChessService {
   private async fetchLichessGames(
     username: string,
     limit: number,
+    opts?: { timeout?: number },
   ): Promise<TrainingGame[]> {
     const url = `https://lichess.org/api/games/user/${encodeURIComponent(
       username,
@@ -189,6 +382,7 @@ export class ChessService {
     const res = await axios.get(url, {
       responseType: 'text',
       validateStatus: () => true,
+      timeout: opts?.timeout ?? TOP_GAMES_REQUEST_TIMEOUT_MS,
     });
 
     if (res.status !== 200 || !res.data) {
