@@ -13,18 +13,22 @@ export interface EngineAnalysis {
 
 interface AnalyzeOptions {
   depth?: number;
+  /** Engine think time in seconds (1–300). Default 5. */
+  thinkTimeSeconds?: number;
 }
 
 @Injectable()
 export class EngineService {
   async analyzePosition(fen: string, options: AnalyzeOptions = {}): Promise<EngineAnalysis> {
     const depth = options.depth ?? 18;
+    const thinkSec = Math.min(300, Math.max(1, options.thinkTimeSeconds ?? 5));
+    const maxTimeMs = thinkSec * 1000;
 
     // 1) Prefer a local Stockfish binary if configured.
     const enginePath = process.env.STOCKFISH_PATH;
     if (enginePath) {
       try {
-        const local = await this.runLocalUciEngine(enginePath, fen, depth);
+        const local = await this.runLocalUciEngine(enginePath, fen, depth, maxTimeMs);
         return { ...local, source: 'local' };
       } catch (err) {
         // eslint-disable-next-line no-console
@@ -34,7 +38,7 @@ export class EngineService {
 
     // 2) Optionally use a strong remote engine (e.g. Lichess cloud eval) IF explicitly configured.
     const engineApiUrl = process.env.ENGINE_API_URL;
-    const timeoutMs = 5000; // up to ~5 seconds thinking time
+    const timeoutMs = maxTimeMs;
 
     if (engineApiUrl) {
       const url = `${engineApiUrl}?fen=${encodeURIComponent(
@@ -93,10 +97,10 @@ export class EngineService {
     enginePath: string,
     fen: string,
     depth: number,
+    maxTimeMs: number,
   ): Promise<EngineAnalysis> {
-    // Use a one-shot UCI session: ask the engine to think for up to ~5 seconds,
+    // Use a one-shot UCI session: ask the engine to think for up to maxTimeMs,
     // resolve as soon as we see a "bestmove" line, then quit the process.
-    const maxTimeMs = 5000;
 
     return new Promise<EngineAnalysis>((resolve, reject) => {
       const engine = spawn(enginePath, [], { stdio: ['pipe', 'pipe', 'pipe'] });

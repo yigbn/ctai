@@ -356,6 +356,30 @@ select:focus {
   color: #e5e7eb;
 }
 
+.insight-toggle-wrap {
+  margin: 0.5rem 0;
+}
+
+.insight-toggle-wrap .btn-secondary {
+  width: 100%;
+}
+
+.insight-think-time {
+  margin-bottom: 0.5rem;
+}
+
+.insight-think-time input[type="number"] {
+  width: 4rem;
+  margin-left: 0.25rem;
+}
+
+.field-hint {
+  display: block;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin-top: 0.15rem;
+}
+
 .move-list {
   margin: 0.2rem 0 0;
   padding-left: 1.1rem;

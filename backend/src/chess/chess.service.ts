@@ -85,6 +85,7 @@ export class ChessService {
   async userMove(
     id: string,
     moveUci: string,
+    thinkTimeSeconds?: number,
   ): Promise<{
     session: ChessSession;
     engineMove?: string;
@@ -120,6 +121,7 @@ export class ChessService {
     if (turnColor !== session.userColor && !chess.isGameOver()) {
       analysis = await this.engineService.analyzePosition(session.currentFen, {
         depth: 14,
+        thinkTimeSeconds,
       });
       if (analysis.bestMove) {
         const eFrom = analysis.bestMove.slice(0, 2);

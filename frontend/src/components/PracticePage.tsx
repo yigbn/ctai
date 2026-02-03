@@ -52,6 +52,8 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
   const [isPreviewDetached, setIsPreviewDetached] = useState(false);
   const [lastPracticePositions, setLastPracticePositions] = useState<LastPracticePosition[]>([]);
   const [lastPracticeSelectedIndex, setLastPracticeSelectedIndex] = useState(0);
+  const [showInsightPanels, setShowInsightPanels] = useState(true);
+  const [engineThinkSeconds, setEngineThinkSeconds] = useState(5);
   const isPreviewDetachedRef = useRef(false);
   useEffect(() => {
     isPreviewDetachedRef.current = isPreviewDetached;
@@ -201,7 +203,10 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
       const res = await fetch(`${apiBaseUrl}/chess/session/${session.id}/move`, {
         method: 'POST',
         headers: authHeaders,
-        body: JSON.stringify({ moveUci }),
+        body: JSON.stringify({
+          moveUci,
+          thinkTimeSeconds: Math.min(300, Math.max(1, engineThinkSeconds)),
+        }),
       });
       if (!res.ok) {
         const text = await res.text();
@@ -479,27 +484,6 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
           </div>
         ) : null}
         <div className="panel">
-          <h3>Engine Insight</h3>
-          {lastEngineMove ? (
-            <p>
-              <strong>Last engine move:</strong> {lastEngineMove}
-            </p>
-          ) : (
-            <p>No engine move yet. Play a move to start the analysis.</p>
-          )}
-        </div>
-        <div className="panel">
-          <h3>AI Explanation</h3>
-          {explanation ? (
-            <p>{explanation}</p>
-          ) : (
-            <p>
-              After each of your moves, the server will request the engine&apos;s response and an AI
-              explanation of the ideas behind it.
-            </p>
-          )}
-        </div>
-        <div className="panel">
           <h3>Move List (UCI)</h3>
           {session && session.moveHistory.length > 0 ? (
             <ol className="move-list">
@@ -513,6 +497,62 @@ export const PracticePage: React.FC<Props> = ({ token }) => {
             <p>No moves yet. Start practice to play.</p>
           )}
         </div>
+        <div className="insight-toggle-wrap">
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setShowInsightPanels((v) => !v)}
+            aria-expanded={showInsightPanels}
+          >
+            {showInsightPanels ? 'Hide' : 'Show'} Engine Insight & AI Explanation
+          </button>
+        </div>
+        {showInsightPanels && (
+          <>
+            <div className="panel">
+              <h3>Engine Insight</h3>
+              <div className="field insight-think-time">
+                <label htmlFor="engine-think-seconds">
+                  Engine think time (seconds):{' '}
+                  <input
+                    id="engine-think-seconds"
+                    type="number"
+                    min={1}
+                    max={300}
+                    value={engineThinkSeconds}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        if (e.target.value === '') {
+                          setEngineThinkSeconds(5);
+                        } else if (!Number.isNaN(v)) {
+                          setEngineThinkSeconds(Math.min(300, Math.max(1, v)));
+                        }
+                      }}
+                  />
+                </label>
+                <span className="field-hint">1–300 (default 5)</span>
+              </div>
+              {lastEngineMove ? (
+                <p>
+                  <strong>Last engine move:</strong> {lastEngineMove}
+                </p>
+              ) : (
+                <p>No engine move yet. Play a move to start the analysis.</p>
+              )}
+            </div>
+            <div className="panel">
+              <h3>AI Explanation</h3>
+              {explanation ? (
+                <p>{explanation}</p>
+              ) : (
+                <p>
+                  After each of your moves, the server will request the engine&apos;s response and an
+                  AI explanation of the ideas behind it.
+                </p>
+              )}
+            </div>
+          </>
+        )}
       </section>
     </div>
   );

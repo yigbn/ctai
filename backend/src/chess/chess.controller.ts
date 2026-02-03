@@ -9,6 +9,7 @@ class CreateSessionDto {
 
 class MoveDto {
   moveUci!: string; // e.g. e2e4, e7e8q
+  thinkTimeSeconds?: number; // 1–300, default 5
 }
 
 @Controller('chess')
@@ -44,7 +45,11 @@ export class ChessController {
 
   @Post('session/:id/move')
   async move(@Param('id') id: string, @Body() body: MoveDto) {
-    const result = await this.chessService.userMove(id, body.moveUci);
+    const result = await this.chessService.userMove(
+      id,
+      body.moveUci,
+      body.thinkTimeSeconds,
+    );
     return result;
   }
 
